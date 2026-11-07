@@ -48,11 +48,17 @@ class DatabaseConfig(BaseModel):
     path: str = "data/seen_ads.db"
 
 
+class FilteringConfig(BaseModel):
+    skip_above_market: bool = True
+    min_discount_percent: float = 0.0
+
+
 class AppConfig(BaseModel):
     telegram: TelegramConfig
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     regions: RegionsConfig = Field(default_factory=RegionsConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    filtering: FilteringConfig = Field(default_factory=FilteringConfig)
     global_stop_words: list[str] = Field(default_factory=list)
     searches: list[SearchTarget] = Field(default_factory=list)
 

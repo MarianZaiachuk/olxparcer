@@ -122,6 +122,19 @@ class DealSniper:
                 # Run market valuation and liquidity estimation
                 self.valuator.evaluate(offer)
 
+                # Skip offers priced above market if configured
+                if (
+                    self.config.filtering.skip_above_market
+                    and offer.market_price is not None
+                    and offer.discount_pct is not None
+                    and offer.discount_pct < self.config.filtering.min_discount_percent
+                ):
+                    logger.info(
+                        f"⏩ Пропуск (дорожче ринку): {offer.title} | "
+                        f"Ціна: {offer.price} грн > Ринок: {offer.market_price} грн ({offer.discount_pct}%)"
+                    )
+                    continue
+
                 badge = "📍 [ЛОКАЛЬНО]" if offer.is_local else "🌐 [РЕГІОНИ]"
                 action_type = "ЦІНУ ЗНИЖЕНО" if offer.is_price_drop else "НОВЕ"
                 logger.info(

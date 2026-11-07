@@ -276,3 +276,10 @@ def test_deal_valuator():
         assert valuation.estimated_profit == 3500
         assert "ТОП ПРОПОЗИЦІЯ" in valuation.verdict
 
+        # 4. Overpriced offer (above market price)
+        expensive_offer = Offer(id=100, title="iPhone 14 128GB Gold", url="u100", price=29000)
+        exp_val = valuator.evaluate(expensive_offer)
+        assert exp_val is not None
+        assert exp_val.discount_pct < 0
+        assert expensive_offer.price > exp_val.market_price
+
