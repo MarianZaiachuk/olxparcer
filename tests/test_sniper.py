@@ -166,6 +166,66 @@ def test_storage_deduplication_and_price_drops():
         assert stats["total_price_drops"] == 1
 
 
+def test_storage_favorites():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = str(Path(tmpdir) / "test_fav.db")
+        storage = Storage(db_path)
+
+        offer = Offer(
+            id=505,
+            title="Sony PlayStation 5",
+            url="https://olx.ua/ps5-505",
+            price=15000,
+            city="Калуш",
+        )
+        storage.check_and_update(offer)
+
+        # Add to favorites
+        ok, msg = storage.add_favorite(505)
+        assert ok is True
+        assert "успішно" in msg
+
+        # Try adding again (duplicate prevention)
+        ok2, msg2 = storage.add_favorite(505)
+        assert ok2 is False
+        assert "вже є" in msg2
+
+        # List favorites
+        favs = storage.get_favorites()
+        assert len(favs) == 1
+        assert favs[0]["offer_id"] == 505
+        assert favs[0]["price"] == 15000
+
+        # Remove favorite
+        removed = storage.remove_favorite(505)
+        assert removed is True
+        assert len(storage.get_favorites()) == 0
+
+
+def test_storage_market_statistics():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = str(Path(tmpdir) / "test_market.db")
+        storage = Storage(db_path)
+
+        offers = [
+            Offer(id=1, title="iPhone 14 128GB Blue", url="u1", price=20000),
+            Offer(id=2, title="iPhone 14 128GB Black", url="u2", price=22000),
+            Offer(id=3, title="iPhone 14 256GB White", url="u3", price=25000),
+            Offer(id=4, title="iPhone 14 Pro 128GB", url="u4", price=28000),
+            Offer(id=5, title="iPhone 13 128GB", url="u5", price=16000),  # Not matching '14'
+        ]
+        for o in offers:
+            storage.check_and_update(o)
+
+        stats = storage.get_market_statistics("iphone 14")
+        assert stats is not None
+        assert stats["sample_count"] == 4
+        assert stats["min_price"] == 20000
+        assert stats["max_price"] == 28000
+        assert stats["median_price"] == 25000
+        assert stats["target_buy_price"] < stats["median_price"]
+
+
 def test_scraper_build_params():
     scraper = OLXScraper()
     target = SearchTarget(

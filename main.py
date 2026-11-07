@@ -1,5 +1,5 @@
 """
-Main orchestrator for OLX Deal Sniper.
+Main orchestrator for OLX Deal Sniper with interactive Telegram bot handlers.
 """
 
 import argparse
@@ -18,6 +18,9 @@ if sys.platform == "win32":
     except (AttributeError, ValueError):
         pass
 
+from aiogram import Dispatcher
+
+from bot_handlers import create_bot_router
 from config import AppConfig, load_config
 from filter import DealFilter
 from notifier import TelegramNotifier
@@ -52,21 +55,37 @@ class DealSniper:
         self.stop_event = asyncio.Event()
         self._cleaned_up = False
 
+        self.dp: Dispatcher | None = None
+        self.bot_task: asyncio.Task | None = None
+
+        if self.notifier.is_configured and self.notifier.bot and not self.dry_run:
+            self.dp = Dispatcher()
+            self.dp.include_router(create_bot_router(self.storage))
+
     async def initialize(self) -> None:
         """Verifies components and sends startup notification."""
         stats = self.storage.get_stats()
         logger.info(
             f"База даних підключена: {stats['total_offers']} оголошень, "
-            f"{stats['total_price_drops']} зафіксованих знижень цін."
+            f"{stats['total_price_drops']} зафіксованих знижень цін, "
+            f"{stats['total_favorites']} в обраному."
         )
 
         if not self.dry_run and self.notifier.is_configured:
+            # Start background bot polling for interactive buttons and commands
+            if self.dp and self.notifier.bot:
+                logger.info("🤖 Запуск інтерактивного Telegram-бота (команди /favorites, /stats, кнопки)...")
+                self.bot_task = asyncio.create_task(
+                    self.dp.start_polling(self.notifier.bot, handle_signals=False)
+                )
+
             targets_count = len(self.config.searches)
             await self.notifier.send_system_message(
                 f"🚀 <b>OLX Deal Sniper запущено!</b>\n"
                 f"🎯 Активних пошуків: <b>{targets_count}</b>\n"
                 f"⏱ Інтервал опитування: <b>{self.config.monitoring.check_interval_seconds}s (±{self.config.monitoring.jitter_seconds}s)</b>\n"
-                f"📍 Пріоритет: <b>{self.config.regions.priority_region_name} (обл. ID {self.config.regions.priority_region_id})</b>"
+                f"📍 Пріоритет: <b>{self.config.regions.priority_region_name} (обл. ID {self.config.regions.priority_region_id})</b>\n\n"
+                f"💡 <i>Використовуйте /favorites для перегляду збережених угод або /stats для аналізу цін.</i>"
             )
 
     async def check_target(self, target, is_first_run: bool) -> int:
@@ -178,11 +197,22 @@ class DealSniper:
         await self.cleanup()
 
     async def cleanup(self) -> None:
-        """Cleans up network sessions and resources."""
+        """Cleans up bot polling, network sessions, and resources."""
         if self._cleaned_up:
             return
         self._cleaned_up = True
         logger.info("Зупинка сервісу та закриття сесій...")
+
+        if self.dp and self.notifier.bot:
+            await self.dp.stop_polling()
+
+        if self.bot_task:
+            self.bot_task.cancel()
+            try:
+                await self.bot_task
+            except asyncio.CancelledError:
+                pass
+
         await self.scraper.close()
         await self.notifier.close()
         logger.info("Роботу коректно завершено.")

@@ -1,5 +1,5 @@
 """
-SQLite storage for tracking seen ads and price drop history.
+SQLite storage for tracking seen ads, price drop history, favorites, and market analytics.
 """
 
 import sqlite3
@@ -60,7 +60,25 @@ class Storage:
                 """
             )
             cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS favorites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    offer_id INTEGER UNIQUE NOT NULL,
+                    title TEXT NOT NULL,
+                    price INTEGER,
+                    currency TEXT,
+                    url TEXT NOT NULL,
+                    city TEXT,
+                    added_at TEXT NOT NULL,
+                    FOREIGN KEY (offer_id) REFERENCES seen_offers(id)
+                )
+                """
+            )
+            cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_price_history_offer_id ON price_history(offer_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_favorites_offer_id ON favorites(offer_id)"
             )
             conn.commit()
 
@@ -149,6 +167,119 @@ class Storage:
             conn.commit()
             return False, None
 
+    def get_offer_by_id(self, offer_id: int) -> dict | None:
+        """Retrieves a single offer by ID."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM seen_offers WHERE id = ?", (offer_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def add_favorite(self, offer_id: int) -> tuple[bool, str]:
+        """Adds an offer to favorites."""
+        now_iso = datetime.now(UTC).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # Check if already in favorites
+            cursor.execute("SELECT id FROM favorites WHERE offer_id = ?", (offer_id,))
+            if cursor.fetchone() is not None:
+                return False, "Оголошення вже є у списку обраних."
+
+            # Fetch offer details
+            cursor.execute("SELECT * FROM seen_offers WHERE id = ?", (offer_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False, "Оголошення не знайдено в базі."
+
+            cursor.execute(
+                """
+                INSERT INTO favorites (offer_id, title, price, currency, url, city, added_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row["id"],
+                    row["title"],
+                    row["price"],
+                    row["currency"],
+                    row["url"],
+                    row["city"],
+                    now_iso,
+                ),
+            )
+            conn.commit()
+            return True, "Оголошення успішно збережено в обране!"
+
+    def remove_favorite(self, offer_id: int) -> bool:
+        """Removes an offer from favorites."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM favorites WHERE offer_id = ?", (offer_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_favorites(self, limit: int = 20) -> list[dict]:
+        """Returns list of bookmarked offers with updated prices."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT f.id, f.offer_id, f.title, s.price, f.currency, f.url, f.city, f.added_at
+                FROM favorites f
+                LEFT JOIN seen_offers s ON f.offer_id = s.id
+                ORDER BY f.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_market_statistics(self, query: str) -> dict | None:
+        """
+        Computes market statistics across all seen offers matching search keywords.
+        Returns: min, max, avg, median, count, target_buy_price, and estimated margin.
+        """
+        words = [w.strip().lower() for w in query.split() if len(w.strip()) >= 2]
+        if not words:
+            return None
+
+        clauses = " AND ".join(["LOWER(title) LIKE ?" for _ in words])
+        params = [f"%{w}%" for w in words]
+
+        sql = f"""
+            SELECT price FROM seen_offers
+            WHERE price IS NOT NULL AND price > 100 AND {clauses}
+            ORDER BY price ASC
+        """
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+
+        prices = [row["price"] for row in rows]
+        count = len(prices)
+        if count < 2:
+            return None
+
+        min_price = prices[0]
+        max_price = prices[-1]
+        avg_price = round(sum(prices) / count)
+        median_price = prices[count // 2]
+        # Recommended buy price for safe flip (~15-20% below median)
+        target_buy_price = round(median_price * 0.82)
+        est_margin = max(0, median_price - target_buy_price)
+
+        return {
+            "query": query,
+            "sample_count": count,
+            "min_price": min_price,
+            "max_price": max_price,
+            "avg_price": avg_price,
+            "median_price": median_price,
+            "target_buy_price": target_buy_price,
+            "estimated_margin": est_margin,
+        }
+
     def get_stats(self) -> dict[str, int]:
         """Returns statistics about tracked offers."""
         with self._get_connection() as conn:
@@ -159,7 +290,11 @@ class Storage:
             cursor.execute("SELECT COUNT(*) FROM price_history")
             total_price_drops = cursor.fetchone()[0]
 
+            cursor.execute("SELECT COUNT(*) FROM favorites")
+            total_favorites = cursor.fetchone()[0]
+
             return {
                 "total_offers": total_offers,
                 "total_price_drops": total_price_drops,
+                "total_favorites": total_favorites,
             }

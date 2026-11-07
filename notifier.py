@@ -1,5 +1,5 @@
 """
-Telegram notification module using aiogram with rich card formatting and photo previews.
+Telegram notification module using aiogram with rich card formatting, photo previews, and interactive buttons.
 """
 
 import asyncio
@@ -10,6 +10,7 @@ from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramRetryAfter
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from models import Offer
 
@@ -78,9 +79,23 @@ class TelegramNotifier:
 
         return "\n".join(lines)
 
+    def _build_inline_keyboard(self, offer: Offer) -> InlineKeyboardMarkup:
+        """Constructs interactive buttons below the notification."""
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="👉 Відкрити на OLX", url=offer.url),
+                ],
+                [
+                    InlineKeyboardButton(text="⭐ В обране", callback_data=f"fav:{offer.id}"),
+                    InlineKeyboardButton(text="📊 Ринкова ціна", callback_data=f"stats:{offer.id}"),
+                ],
+            ]
+        )
+
     async def send_deal_notification(self, offer: Offer, target_name: str) -> bool:
         """
-        Sends an ad card to Telegram with photo preview.
+        Sends an ad card to Telegram with photo preview and interactive buttons.
         Falls back to a formatted text message if photo fails.
         """
         if not self.is_configured or not self.bot:
@@ -88,6 +103,7 @@ class TelegramNotifier:
             return False
 
         caption = self._build_caption(offer, target_name)
+        reply_markup = self._build_inline_keyboard(offer)
 
         try:
             if offer.photo_url:
@@ -96,6 +112,7 @@ class TelegramNotifier:
                         chat_id=self.chat_id,
                         photo=offer.photo_url,
                         caption=caption,
+                        reply_markup=reply_markup,
                     )
                     return True
                 except TelegramRetryAfter as e:
@@ -105,6 +122,7 @@ class TelegramNotifier:
                         chat_id=self.chat_id,
                         photo=offer.photo_url,
                         caption=caption,
+                        reply_markup=reply_markup,
                     )
                     return True
                 except Exception as photo_err:  # noqa: BLE001
@@ -114,6 +132,7 @@ class TelegramNotifier:
             await self.bot.send_message(
                 chat_id=self.chat_id,
                 text=caption,
+                reply_markup=reply_markup,
                 disable_web_page_preview=False,
             )
             return True
