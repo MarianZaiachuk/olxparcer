@@ -24,18 +24,21 @@ class OLXScraper:
         "Referer": "https://www.olx.ua/",
     }
 
-    def __init__(self, impersonate_profile: str = "chrome124", proxy: str | None = None):
+    FALLBACK_PROFILES: ClassVar[list[str]] = ["chrome120", "chrome124", "edge101"]
+
+    def __init__(self, impersonate_profile: str = "chrome120", proxy: str | None = None):
         self.impersonate_profile = impersonate_profile
         self.proxy = proxy
         self.session: AsyncSession | None = None
 
-    async def _get_session(self) -> AsyncSession:
+    async def _get_session(self, profile: str | None = None) -> AsyncSession:
+        target_profile = profile or self.impersonate_profile
         if self.session is None:
             self.session = AsyncSession(
-                impersonate=self.impersonate_profile,
+                impersonate=target_profile,
                 headers=self.DEFAULT_HEADERS,
                 proxy=self.proxy,
-                timeout=15.0,
+                timeout=30.0,
             )
         return self.session
 
@@ -44,7 +47,7 @@ class OLXScraper:
             await self.session.close()
             self.session = None
 
-    def _build_params(self, target: SearchTarget, limit: int = 30) -> dict:
+    def _build_params(self, target: SearchTarget, limit: int = 20) -> dict:
         """
         Builds query parameters for the OLX API from a SearchTarget.
         Supports both query parameters and path-based OLX search URLs (/q-query/).
@@ -153,14 +156,15 @@ class OLXScraper:
             logger.debug(f"Error parsing offer {item.get('id')}: {e}")
             return None
 
-    async def fetch_offers(self, target: SearchTarget, limit: int = 30, retries: int = 3) -> list[Offer]:
+    async def fetch_offers(self, target: SearchTarget, limit: int = 20, retries: int = 3) -> list[Offer]:
         """
         Fetches latest offers for a target with automatic retries and TLS session rotation.
         """
         params = self._build_params(target, limit=limit)
-        session = await self._get_session()
 
         for attempt in range(1, retries + 1):
+            profile = self.FALLBACK_PROFILES[(attempt - 1) % len(self.FALLBACK_PROFILES)]
+            session = await self._get_session(profile=profile)
             try:
                 response = await session.get(self.API_URL, params=params)
 
@@ -177,12 +181,11 @@ class OLXScraper:
 
                 elif response.status_code in (403, 429):
                     logger.warning(
-                        f"Rate limit / Bot detection (HTTP {response.status_code}) on attempt {attempt}/{retries}. "
-                        "Rotating session and backing off..."
+                        f"Rate limit / Cloudflare challenge (HTTP {response.status_code}) on attempt {attempt}/{retries}. "
+                        "Rotating TLS session and backing off..."
                     )
                     await self.close()
                     await asyncio.sleep(3 * attempt)
-                    session = await self._get_session()
 
                 else:
                     logger.warning(
@@ -191,10 +194,9 @@ class OLXScraper:
                     await asyncio.sleep(2 * attempt)
 
             except Exception as e:  # noqa: BLE001
-                logger.error(f"Network error while fetching '{target.name}' on attempt {attempt}/{retries}: {e}")
+                logger.warning(f"Тимчасова затримка мережі для '{target.name}' (спроба {attempt}/{retries}): {e}")
                 await self.close()
                 await asyncio.sleep(2 * attempt)
-                session = await self._get_session()
 
-        logger.error(f"Failed to fetch offers for '{target.name}' after {retries} attempts.")
+        logger.error(f"Не вдалося отримати дані для '{target.name}' після {retries} спроб.")
         return []
