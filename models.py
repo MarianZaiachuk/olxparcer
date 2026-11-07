@@ -20,6 +20,14 @@ class Offer(BaseModel):
     is_local: bool = False
     is_price_drop: bool = False
     old_price: int | None = None
+    # Market valuation & liquidity metrics
+    market_price: int | None = None
+    discount_pct: float | None = None
+    resale_price: int | None = None
+    estimated_profit: int | None = None
+    liquidity_score: float | None = None
+    liquidity_label: str | None = None
+    deal_verdict: str | None = None
 
     @field_validator("city", mode="before")
     @classmethod

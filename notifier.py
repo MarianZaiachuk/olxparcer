@@ -75,6 +75,24 @@ class TelegramNotifier:
             time_str = offer.created_time.replace("T", " ").split("+")[0]
             lines.append(f"🕒 Опубліковано: {time_str}")
 
+        # Valuation and flipping analysis block
+        if offer.market_price and offer.discount_pct is not None:
+            lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+            if offer.deal_verdict:
+                lines.append(f"<b>{offer.deal_verdict}</b>")
+
+            sign = "-" if offer.discount_pct > 0 else "+"
+            lines.append(f"📊 Оцінка ринку: ~<b>{self._format_price(offer.market_price, offer.currency)}</b>")
+            lines.append(f"📉 Різниця з ринком: <b>{sign}{abs(offer.discount_pct)}%</b>")
+
+            if offer.resale_price:
+                lines.append(f"💵 Можна продати швидко: ~<b>{self._format_price(offer.resale_price, offer.currency)}</b>")
+            if offer.estimated_profit and offer.estimated_profit > 0:
+                lines.append(f"💸 Орієнтовний профіт: ~<b>+{self._format_price(offer.estimated_profit, offer.currency)}</b>")
+            if offer.liquidity_label:
+                lines.append(f"⚡ Ліквідність: <b>{offer.liquidity_label}</b>")
+            lines.append("━━━━━━━━━━━━━━━━━━━━")
+
         lines.append(f'\n👉 <a href="{safe_url}"><b>ВІДКРИТИ НА OLX</b></a>')
 
         return "\n".join(lines)

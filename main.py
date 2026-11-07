@@ -26,6 +26,7 @@ from filter import DealFilter
 from notifier import TelegramNotifier
 from scraper import OLXScraper
 from storage import Storage
+from valuation import DealValuator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,6 +48,7 @@ class DealSniper:
             priority_cities=config.regions.priority_cities,
         )
         self.scraper = OLXScraper()
+        self.valuator = DealValuator(self.storage)
         self.notifier = TelegramNotifier(
             bot_token=config.telegram.bot_token,
             chat_id=config.telegram.chat_id,
@@ -117,6 +119,9 @@ class DealSniper:
 
             # 3. Notify if new offer or price dropped
             if is_new or offer.is_price_drop:
+                # Run market valuation and liquidity estimation
+                self.valuator.evaluate(offer)
+
                 badge = "📍 [ЛОКАЛЬНО]" if offer.is_local else "🌐 [РЕГІОНИ]"
                 action_type = "ЦІНУ ЗНИЖЕНО" if offer.is_price_drop else "НОВЕ"
                 logger.info(

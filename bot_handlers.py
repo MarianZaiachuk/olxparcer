@@ -176,12 +176,13 @@ def clean_title_for_stats(title: str) -> str:
     return " ".join(meaningful[:3]) if meaningful else title[:20]
 
 
-def format_market_report(stats: dict) -> str:
+def format_market_report(stats: dict, liquidity_label: str = "Висока ⚡ (1-3 дні)") -> str:
     query_safe = html.escape(stats["query"])
     min_p = f"{stats['min_price']:,}".replace(",", " ")
     max_p = f"{stats['max_price']:,}".replace(",", " ")
     avg_p = f"{stats['avg_price']:,}".replace(",", " ")
     med_p = f"{stats['median_price']:,}".replace(",", " ")
+    quick_p = f"{round(stats['median_price'] * 0.94):,}".replace(",", " ")
     buy_p = f"{stats['target_buy_price']:,}".replace(",", " ")
     margin_p = f"{stats['estimated_margin']:,}".replace(",", " ")
 
@@ -190,10 +191,11 @@ def format_market_report(stats: dict) -> str:
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📦 Проаналізовано пропозицій: <b>{stats['sample_count']}</b>\n"
         f"💰 Середня ціна ринку: <b>{avg_p} грн</b>\n"
-        f"📈 Медіанна ціна: <b>{med_p} грн</b>\n"
-        f"📉 Мінімальна ціна: <b>{min_p} грн</b>\n"
-        f"🔝 Максимальна ціна: <b>{max_p} грн</b>\n"
+        f"📈 Медіанна ринкова ціна: <b>{med_p} грн</b>\n"
+        f"📉 Діапазон цін: від <b>{min_p}</b> до <b>{max_p} грн</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💵 <b>Швидкий перепродаж (1-3 дні):</b> ~<b>{quick_p} грн</b>\n"
         f"🎯 <b>Рекомендована ціна викупу:</b> до <b>{buy_p} грн</b>\n"
-        f"💵 <b>Орієнтовний прибуток (маржа):</b> ~<b>{margin_p} грн</b> (~18-20%)\n"
+        f"💸 <b>Орієнтовний чистий профіт:</b> ~<b>{margin_p} грн</b> (~18-20%)\n"
+        f"⚡ <b>Ліквідність:</b> {liquidity_label}\n"
     )

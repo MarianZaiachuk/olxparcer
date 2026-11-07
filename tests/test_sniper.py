@@ -9,6 +9,7 @@ from filter import DealFilter
 from models import Offer, SearchTarget
 from scraper import OLXScraper
 from storage import Storage
+from valuation import DealValuator
 
 
 def test_offer_price_drop_calculation():
@@ -242,3 +243,36 @@ def test_scraper_build_params():
     assert params["region_id"] == 13
     assert params["limit"] == 25
     assert params["sort_by"] == "created_at:desc"
+
+
+def test_deal_valuator():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = str(Path(tmpdir) / "test_val.db")
+        storage = Storage(db_path)
+        valuator = DealValuator(storage)
+
+        # 1. Test liquidity estimation
+        score, label = valuator.estimate_liquidity("Apple iPhone 14 Pro 128GB")
+        assert score >= 9.0
+        assert "Дуже висока" in label
+
+        # 2. Add sample market data
+        offers = [
+            Offer(id=1, title="iPhone 14 128GB Blue", url="u1", price=24000),
+            Offer(id=2, title="iPhone 14 128GB Black", url="u2", price=25000),
+            Offer(id=3, title="iPhone 14 128GB White", url="u3", price=26000),
+        ]
+        for o in offers:
+            storage.check_and_update(o)
+
+        # 3. New cheap offer
+        deal_offer = Offer(id=99, title="iPhone 14 128GB Red", url="u99", price=20000)
+        valuation = valuator.evaluate(deal_offer)
+
+        assert valuation is not None
+        assert valuation.market_price == 25000
+        assert valuation.discount_pct == 20.0
+        assert valuation.quick_resale_price == 23500
+        assert valuation.estimated_profit == 3500
+        assert "ТОП ПРОПОЗИЦІЯ" in valuation.verdict
+
