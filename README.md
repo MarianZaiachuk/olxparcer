@@ -1,159 +1,67 @@
-# 🦅 OLX Deal Sniper (olx.ua)
+[English](README.en.md)
 
-Швидкий, модульний та стійкий до блокувань сервіс моніторингу вигідних пропозицій на OLX Україна з миттєвими сповіщеннями в Telegram.
+# OLX Deal Sniper
 
----
+Сервіс моніторингу оголошень на `olx.ua` зі збереженням історії цін у SQLite, оцінкою ринкової вартості та сповіщеннями в Telegram.
 
-## ⚡ Особливості архітектури
-- **Обхід Cloudflare / CloudFront TLS Fingerprinting:** Використовує бібліотеку `curl_cffi` з емуляцією сучасних відбитків браузера Chrome 124+ (JA3/JA4) для миттєвих легких HTTP-запитів до внутрішнього API `olx.ua/api/v1/offers/`.
-- **Розумна фільтрація вигоди:**
-  - Фільтри діапазону цін (від / до).
-  - Глобальний та локальний чорний список стоп-слів (брак, на запчастини, iCloud lock, MDM, підробки, обмін).
-  - Білий список (обов'язкова наявність ключових характеристик).
-- **Пріоритет локальних угод (Івано-Франківськ та область):**
-  - Автоматичне маркування та підсвічування пропозицій з вашого регіону (`📍 [ЛОКАЛЬНО: Івано-Франківськ]`) для безпечного самовивозу та огляду товару на місці.
-- **Відстеження динаміки цін (Price Drop Alerts):**
-  - Якщо продавець знижує ціну на вже опублікований товар, бот надсилає сповіщення `📉 ЦІНУ ЗНИЖЕНО НА X%` із порівнянням старої та нової ціни.
-- **SQLite сховище:**
-  - База даних `data/seen_ads.db` гарантує відсутність дублікатів та зберігає повну історію зміни цін.
-- **Rich Telegram Cards & Інтерактивні кнопки:**
-  - Попередній перегляд повнорозмірних фото товару, форматування цін та дати публікації.
-  - Кнопка `[👉 Відкрити на OLX]` — прямий перехід до оголошення в 1 клік.
-  - Кнопка `[⭐ В обране]` — зберігає оголошення в обране прямо з чату.
-  - Кнопка `[📊 Ринкова ціна]` — миттєвий розрахунок ринкової аналітики для цієї моделі.
-- **Модуль ринкової статистики & CRM Обраного:**
-  - Команда `/favorites` — список усіх збережених вигідних пропозицій.
-  - Команда `/stats <назва>` — детальний розрахунок середньої, медіанної, мінімальної цін та рекомендованої ціни швидкого викупу для перепродажу (з розрахунком маржі).
-- **Антибан-механіка:**
-  - Рандомізований джиттер (плаваючий інтервал перевірки $\pm 15$ сек).
-  - Затримки між запитами категорій.
-  - Автоматичний reconnect та ротація TLS-сесій при HTTP 429/403.
+**Онлайн-демо:** [marianzaiachuk.github.io/olxparcer](https://marianzaiachuk.github.io/olxparcer/) — інтерактивна симуляція фільтрації, оцінки вигоди, симуляції зниження ціни та Telegram-карток прямо в браузері (на тестових даних).
 
----
+## Можливості
 
-## 🚀 Швидкий старт
+- HTTP-запити до внутрішнього API `olx.ua/api/v1/offers/` через `curl_cffi` з ротацією TLS-профілів та випадковим джиттером інтервалу
+- Фільтрація за межами цін, білими списками та стоп-словами з урахуванням меж слів (`\b...\b`)
+- Визначення пріоритетного регіону/міст для самовивозу
+- Дедуплікація та трекінг знижень ціни (`price_history`) у SQLite (`data/seen_ads.db`)
+- Розрахунок медіанної ціни ринку (окремо для UAH та USD), орієнтовної ціни швидкого перепродажу та ліквідності товару
+- Інтерактивний Telegram-бот на `aiogram 3` з кнопками під кожним оголошенням і командами `/favorites`, `/stats`, `/status`
 
-### 1. Встановлення залежностей
-Проєкт використовує швидкий менеджер пакетів `uv`:
+## Швидкий старт (`uv`)
 
-```powershell
-# Клонуйте або відкрийте папку проєкту
-cd c:\Users\OPIUM\Downloads\olxparcer
-
-# Всі залежності встановлюються автоматично через uv
+```bash
+git clone https://github.com/MarianZaiachuk/olxparcer.git
+cd olxparcer
 uv sync
+cp .env.example .env
 ```
 
-### 2. Налаштування Telegram бота
-Створіть файл `.env` на основі `.env.example`:
+Заповніть `TELEGRAM_BOT_TOKEN` і `TELEGRAM_CHAT_ID` у `.env`, налаштуйте пошукові запити в `config.yaml` та перевірте підключення:
 
-```env
-TELEGRAM_BOT_TOKEN=1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ
-TELEGRAM_CHAT_ID=123456789
-```
-
-> **Як отримати токен та Chat ID:**
-> 1. Створіть бота через [@BotFather](https://t.me/BotFather) у Telegram і скопіюйте API токен.
-> 2. Запустіть створеного бота (натисніть `/start`).
-> 3. Дізнайтеся свій числовий Chat ID через бота [@userinfobot](https://t.me/userinfobot).
-
-### 3. Діагностика з'єднання
-Перед запуском виконайте автоматичний тест:
-
-```powershell
+```bash
 uv run python test_connection.py
-```
-Скрипт перевірить обхід захисту OLX, підключення до бази та надішле тестове повідомлення у ваш Telegram.
-
-### 4. Запуск моніторингу
-
-#### Звичайний запуск:
-```powershell
-uv run python main.py
-```
-
-#### Тестовий прогін без Telegram (Dry Run):
-```powershell
 uv run python main.py --dry-run --once
 ```
 
----
+Звичайний запуск моніторингу:
 
-## ⚙️ Налаштування пошуків (`config.yaml`)
-
-Усі категорії, цінові межі та стоп-слова редагуються у `config.yaml`:
-
-```yaml
-monitoring:
-  check_interval_seconds: 45 # Інтервал опитування
-  jitter_seconds: 15         # Випадкове відхилення +/- секунд
-  notify_on_startup: false   # false = не спамити старими оголошеннями при старті
-
-regions:
-  priority_region_id: 13     # 13 = Івано-Франківська область
-  priority_region_name: "Івано-Франківськ"
-
-searches:
-  - name: "Apple iPhone"
-    query: "iphone"
-    min_price: 10000
-    max_price: 45000
-    stop_words:
-      - "чохол"
-      - "скло"
-
-  - name: "Apple MacBook M-серії"
-    query: "macbook"
-    min_price: 15000
-    max_price: 60000
-```
-
----
-
-## 🕒 Фоновий запуск 24/7
-
-### Варіант А: Через PM2 (рекомендовано для Windows і Linux)
-```powershell
-# Встановлення PM2 (якщо ще немає NodeJS)
-npm install -g pm2
-
-# Запуск снайпера під контролем PM2
-pm2 start "uv run python main.py" --name "olx-sniper"
-
-# Перевірка статусу та логів
-pm2 status
-pm2 logs olx-sniper
-
-# Збереження для автостарту при перезавантаженні системи
-pm2 save
-```
-
-### Варіант Б: Фоновий процес Windows (PowerShell)
-```powershell
-Start-Process -NoNewWindow -FilePath "uv" -ArgumentList "run", "python", "main.py"
-```
-
-### Варіант В: Systemd сервіс (для Linux VPS сервісу)
-Створіть файл `/etc/systemd/system/olx-sniper.service`:
-```ini
-[Unit]
-Description=OLX Deal Sniper Daemon
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/olxparcer
-ExecStart=/root/.cargo/bin/uv run python main.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-Увімкніть автозапуск:
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now olx-sniper
-sudo systemctl status olx-sniper
+uv run python main.py
 ```
+
+Додатково можна передати проксі через `--proxy http://user:pass@host:port` або змінну `OLX_PROXY`.
+
+## Запуск 24/7 у Docker
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+База `data/seen_ads.db` та конфіг `config.yaml` підключаються через volumes, тому історія оголошень зберігається між перезапусками контейнера.
+
+## Команди Telegram-бота
+
+- `/status` — кількість збережених оголошень, знижень ціни, обраного та активних пошуків
+- `/favorites` — список збережених угод
+- `/stats <модель>` — медіанна/середня ціна ринку та рекомендована ціна викупу (напр. `/stats iphone 14`)
+- `/help` — довідка по командах
+
+## Тести та лінтинг
+
+```bash
+uv run pytest -v
+uv run ruff check .
+```
+
+## Ліцензія
+
+[MIT](LICENSE)

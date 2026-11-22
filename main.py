@@ -5,6 +5,7 @@ Main orchestrator for OLX Deal Sniper with interactive Telegram bot handlers.
 import argparse
 import asyncio
 import logging
+import os
 import random
 import signal
 import sys
@@ -37,7 +38,7 @@ logger = logging.getLogger("OLXSniper")
 
 
 class DealSniper:
-    def __init__(self, config: AppConfig, dry_run: bool = False):
+    def __init__(self, config: AppConfig, dry_run: bool = False, proxy: str | None = None):
         self.config = config
         self.dry_run = dry_run
         self.storage = Storage(config.database.path)
@@ -47,11 +48,12 @@ class DealSniper:
             priority_region_name=config.regions.priority_region_name,
             priority_cities=config.regions.priority_cities,
         )
-        self.scraper = OLXScraper()
+        self.scraper = OLXScraper(proxy=proxy)
         self.valuator = DealValuator(self.storage)
         self.notifier = TelegramNotifier(
             bot_token=config.telegram.bot_token,
             chat_id=config.telegram.chat_id,
+            priority_region_name=config.regions.priority_region_name,
         )
         self.is_running = True
         self.stop_event = asyncio.Event()
@@ -62,7 +64,14 @@ class DealSniper:
 
         if self.notifier.is_configured and self.notifier.bot and not self.dry_run:
             self.dp = Dispatcher()
-            self.dp.include_router(create_bot_router(self.storage))
+            self.dp.include_router(
+                create_bot_router(
+                    self.storage,
+                    valuator=self.valuator,
+                    allowed_chat_id=config.telegram.chat_id,
+                    targets_count=len(config.searches),
+                )
+            )
 
     async def initialize(self) -> None:
         """Verifies components and sends startup notification."""
@@ -221,8 +230,11 @@ class DealSniper:
         self._cleaned_up = True
         logger.info("Зупинка сервісу та закриття сесій...")
 
-        if self.dp and self.notifier.bot:
-            await self.dp.stop_polling()
+        if self.dp and self.notifier.bot and self.bot_task and not self.bot_task.done():
+            try:
+                await self.dp.stop_polling()
+            except RuntimeError:
+                pass
 
         if self.bot_task:
             self.bot_task.cancel()
@@ -241,10 +253,12 @@ def main():
     parser.add_argument("--config", default="config.yaml", help="Шлях до config.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Запуск без надсилання в Telegram")
     parser.add_argument("--once", action="store_true", help="Виконати один цикл перевірки та вийти")
+    parser.add_argument("--proxy", default=None, help="HTTP/SOCKS5 проксі (або змінна OLX_PROXY)")
     args = parser.parse_args()
 
     config = load_config(args.config)
-    sniper = DealSniper(config=config, dry_run=args.dry_run)
+    proxy = args.proxy or os.getenv("OLX_PROXY") or None
+    sniper = DealSniper(config=config, dry_run=args.dry_run, proxy=proxy)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

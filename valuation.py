@@ -23,11 +23,11 @@ class DealValuation(BaseModel):
 
 # Liquidity heuristics for Ukrainian classifieds market
 HIGH_LIQUIDITY_PATTERNS = [
-    (r"\biphone\s*(1[3-6])\b", 9.6, "Дуже висока 🚀 (1-2 дні)"),
+    (r"\biphone\s*(1[3-7])\b", 9.6, "Дуже висока 🚀 (1-2 дні)"),
     (r"\biphone\s*(1[1-2])\b", 9.2, "Висока ⚡ (2-4 дні)"),
     (r"\bplaystation\s*5\b|\bps5\b", 9.5, "Дуже висока 🚀 (1-3 дні)"),
     (r"\bsteam\s*deck\b", 9.0, "Висока ⚡ (2-4 дні)"),
-    (r"\bmacbook\s*(air|pro)?\s*(m[1-3])\b", 9.1, "Висока ⚡ (2-5 днів)"),
+    (r"\bmacbook\s*(air|pro)?\s*(m[1-4])\b", 9.1, "Висока ⚡ (2-5 днів)"),
     (r"\becoflow\b|\bbluetti\b", 9.3, "Дуже висока 🔥 (1-3 дні)"),
     (r"\bairpods\s*pro\b|\bairpods\s*max\b", 9.2, "Висока ⚡ (1-3 дні)"),
     (r"\bnintendo\s*switch\s*oled\b", 8.8, "Висока ⚡ (3-5 днів)"),
@@ -35,6 +35,15 @@ HIGH_LIQUIDITY_PATTERNS = [
     (r"\bipad\s*(air|pro|mini)?\b", 8.2, "Середня-висока ⚖️ (4-7 днів)"),
     (r"\bapple\s*watch\b", 7.8, "Середня ⚖️ (5-8 днів)"),
 ]
+
+
+def clean_title_for_stats(title: str) -> str:
+    """Extracts core model tokens from ad title for market statistics grouping."""
+    cleaned = re.sub(r"[^\w\s]", " ", title.lower())
+    words = cleaned.split()
+    stop = {"продам", "новий", "бу", "нова", "стан", "ідеал", "гарний", "терміново", "торг", "чохол"}
+    meaningful = [w for w in words if w not in stop]
+    return " ".join(meaningful[:3]) if meaningful else title[:20]
 
 
 class DealValuator:
@@ -58,14 +67,10 @@ class DealValuator:
             return None
 
         # 1. Clean title into search keywords (e.g. 'iphone', '14', 'pro')
-        cleaned = re.sub(r"[^\w\s]", " ", offer.title.lower())
-        words = cleaned.split()
-        stop = {"продам", "новий", "бу", "нова", "стан", "ідеал", "гарний", "терміново", "торг", "чохол"}
-        meaningful = [w for w in words if w not in stop]
-        query = " ".join(meaningful[:3]) if meaningful else offer.title[:15]
+        query = clean_title_for_stats(offer.title)
 
-        # 2. Get market stats from DB
-        stats = self.storage.get_market_statistics(query)
+        # 2. Get market stats from DB (isolated by currency)
+        stats = self.storage.get_market_statistics(query, currency=offer.currency)
 
         market_price = None
         if stats and stats["sample_count"] >= 3:

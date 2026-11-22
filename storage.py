@@ -3,6 +3,7 @@ SQLite storage for tracking seen ads, price drop history, favorites, and market 
 """
 
 import sqlite3
+import statistics
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ class Storage:
     def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.create_function("ulower", 1, lambda s: s.lower() if isinstance(s, str) else "")
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
@@ -233,7 +235,7 @@ class Storage:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_market_statistics(self, query: str) -> dict | None:
+    def get_market_statistics(self, query: str, currency: str | None = "UAH") -> dict | None:
         """
         Computes market statistics across all seen offers matching search keywords.
         Returns: min, max, avg, median, count, target_buy_price, and estimated margin.
@@ -242,12 +244,18 @@ class Storage:
         if not words:
             return None
 
-        clauses = " AND ".join(["LOWER(title) LIKE ?" for _ in words])
-        params = [f"%{w}%" for w in words]
+        clauses = " AND ".join(["ulower(title) LIKE ?" for _ in words])
+        params: list[str] = [f"%{w}%" for w in words]
+
+        if currency in (None, "UAH", "грн"):
+            currency_clause = "(currency IS NULL OR currency IN ('UAH', 'грн'))"
+        else:
+            currency_clause = "currency = ?"
+            params.append(currency)
 
         sql = f"""
             SELECT price FROM seen_offers
-            WHERE price IS NOT NULL AND price > 100 AND {clauses}
+            WHERE price IS NOT NULL AND price > 100 AND {currency_clause} AND {clauses}
             ORDER BY price ASC
         """
 
@@ -264,7 +272,7 @@ class Storage:
         min_price = prices[0]
         max_price = prices[-1]
         avg_price = round(sum(prices) / count)
-        median_price = prices[count // 2]
+        median_price = round(statistics.median(prices))
         # Recommended buy price for safe flip (~15-20% below median)
         target_buy_price = round(median_price * 0.82)
         est_margin = max(0, median_price - target_buy_price)

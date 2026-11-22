@@ -5,11 +5,13 @@ Unit tests for OLX Deal Sniper components.
 import tempfile
 from pathlib import Path
 
+from bot_handlers import is_chat_authorized, parse_offer_id
 from filter import DealFilter
 from models import Offer, SearchTarget
+from notifier import TelegramNotifier
 from scraper import OLXScraper
 from storage import Storage
-from valuation import DealValuator
+from valuation import DealValuator, clean_title_for_stats
 
 
 def test_offer_price_drop_calculation():
@@ -223,7 +225,7 @@ def test_storage_market_statistics():
         assert stats["sample_count"] == 4
         assert stats["min_price"] == 20000
         assert stats["max_price"] == 28000
-        assert stats["median_price"] == 25000
+        assert stats["median_price"] == 23500
         assert stats["target_buy_price"] < stats["median_price"]
 
 
@@ -282,4 +284,76 @@ def test_deal_valuator():
         assert exp_val is not None
         assert exp_val.discount_pct < 0
         assert expensive_offer.price > exp_val.market_price
+
+
+def test_storage_cyrillic_casefold_and_currency_isolation():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = str(Path(tmpdir) / "test_cyr.db")
+        storage = Storage(db_path)
+
+        offers = [
+            Offer(id=1, title="Зарядна станція EcoFlow Delta 2", url="u1", price=30000, currency="UAH"),
+            Offer(id=2, title="ЗАРЯДНА СТАНЦІЯ EcoFlow River 2", url="u2", price=14000, currency="UAH"),
+            Offer(id=3, title="Зарядна станція EcoFlow Pro", url="u3", price=900, currency="USD"),
+        ]
+        for o in offers:
+            storage.check_and_update(o)
+
+        uah_stats = storage.get_market_statistics("зарядна станція", currency="UAH")
+        assert uah_stats is not None
+        assert uah_stats["sample_count"] == 2
+        assert uah_stats["median_price"] == 22000
+
+        usd_stats = storage.get_market_statistics("зарядна станція", currency="USD")
+        assert usd_stats is None
+
+
+def test_clean_title_and_m4_liquidity():
+    assert clean_title_for_stats("Продам MacBook Air M4 16/256Gb ідеал торг") == "macbook air m4"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        storage = Storage(str(Path(tmpdir) / "test_m4.db"))
+        valuator = DealValuator(storage)
+        score, label = valuator.estimate_liquidity("MacBook Air M4 256GB")
+        assert score >= 9.0
+        assert "Висока" in label
+
+
+def test_notifier_dynamic_region_label():
+    notifier = TelegramNotifier(bot_token="", chat_id="", priority_region_name="Львів")
+    offer = Offer(
+        id=77,
+        title="Sony PlayStation 5 Slim",
+        url="https://www.olx.ua/d/uk/ps5",
+        price=16000,
+        city="Львів",
+        region="Львівська область",
+        is_local=True,
+    )
+    caption = notifier._build_caption(offer, "PS5")
+    assert "[ЛОКАЛЬНО: ЛЬВІВ / ОБЛАСТЬ]" in caption
+    assert "ІВАНО-ФРАНКІВСЬК" not in caption
+
+
+def test_scraper_url_decoded_query_slug():
+    scraper = OLXScraper()
+    target = SearchTarget(
+        name="Encoded Query",
+        url="https://www.olx.ua/uk/list/q-%D0%B7%D0%B0%D1%80%D1%8F%D0%B4%D0%BD%D0%B0-%D1%81%D1%82%D0%B0%D0%BD%D1%86%D1%96%D1%8F/",
+    )
+    params = scraper._build_params(target)
+    assert params["query"] == "зарядна станція"
+
+
+def test_bot_auth_and_callback_parsing():
+    assert is_chat_authorized(12345, "12345") is True
+    assert is_chat_authorized(99999, "12345") is False
+    assert is_chat_authorized(99999, "") is True
+    assert is_chat_authorized(None, "12345") is False
+
+    assert parse_offer_id("fav:4201") == 4201
+    assert parse_offer_id("stats:99") == 99
+    assert parse_offer_id("fav:bad") is None
+    assert parse_offer_id("invalid") is None
+    assert parse_offer_id(None) is None
 

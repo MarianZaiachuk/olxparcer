@@ -18,9 +18,15 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramNotifier:
-    def __init__(self, bot_token: str, chat_id: str):
+    def __init__(
+        self,
+        bot_token: str,
+        chat_id: str,
+        priority_region_name: str = "Івано-Франківськ",
+    ):
         self.bot_token = bot_token.strip()
         self.chat_id = chat_id.strip()
+        self.priority_region_name = priority_region_name
         self.bot: Bot | None = None
 
         if self.bot_token and self.chat_id:
@@ -54,7 +60,8 @@ class TelegramNotifier:
 
         # Local badge (High priority for sniper)
         if offer.is_local:
-            lines.append("⚡ <b>[ЛОКАЛЬНО: ІВАНО-ФРАНКІВСЬК / ОБЛАСТЬ]</b>")
+            safe_priority = html.escape(self.priority_region_name.upper())
+            lines.append(f"⚡ <b>[ЛОКАЛЬНО: {safe_priority} / ОБЛАСТЬ]</b>")
             lines.append("<i>(Можна забрати особисто / оглянути на місці!)</i>\n")
 
         # Header: New or Price Drop
@@ -124,7 +131,7 @@ class TelegramNotifier:
         reply_markup = self._build_inline_keyboard(offer)
 
         try:
-            if offer.photo_url:
+            if offer.photo_url and len(caption) <= 1024:
                 try:
                     await self.bot.send_photo(
                         chat_id=self.chat_id,
@@ -147,12 +154,22 @@ class TelegramNotifier:
                     logger.debug(f"Could not send photo ({photo_err}), sending text fallback...")
 
             # Fallback to text message
-            await self.bot.send_message(
-                chat_id=self.chat_id,
-                text=caption,
-                reply_markup=reply_markup,
-                disable_web_page_preview=False,
-            )
+            try:
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=caption,
+                    reply_markup=reply_markup,
+                    disable_web_page_preview=False,
+                )
+            except TelegramRetryAfter as e:
+                logger.warning(f"Telegram flood limit: sleeping {e.retry_after + 1}s")
+                await asyncio.sleep(e.retry_after + 1)
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=caption,
+                    reply_markup=reply_markup,
+                    disable_web_page_preview=False,
+                )
             return True
 
         except Exception as e:  # noqa: BLE001

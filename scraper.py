@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from typing import ClassVar
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from curl_cffi.requests import AsyncSession
 
@@ -30,9 +30,12 @@ class OLXScraper:
         self.impersonate_profile = impersonate_profile
         self.proxy = proxy
         self.session: AsyncSession | None = None
+        self._active_profile: str | None = None
 
     async def _get_session(self, profile: str | None = None) -> AsyncSession:
         target_profile = profile or self.impersonate_profile
+        if self.session is not None and target_profile != self._active_profile:
+            await self.close()
         if self.session is None:
             self.session = AsyncSession(
                 impersonate=target_profile,
@@ -40,12 +43,14 @@ class OLXScraper:
                 proxy=self.proxy,
                 timeout=30.0,
             )
+            self._active_profile = target_profile
         return self.session
 
     async def close(self) -> None:
         if self.session:
             await self.session.close()
             self.session = None
+            self._active_profile = None
 
     def _build_params(self, target: SearchTarget, limit: int = 20) -> dict:
         """
@@ -68,7 +73,7 @@ class OLXScraper:
             elif "/q-" in parsed.path:
                 match = re.search(r"/q-([^/]+)", parsed.path)
                 if match:
-                    params["query"] = match.group(1).replace("-", " ")
+                    params["query"] = unquote(match.group(1)).replace("-", " ")
 
             if "search[filter_float_price:from]" in qs:
                 params["filter_float_price:from"] = qs["search[filter_float_price:from]"][0]
