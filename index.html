@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OLX Deal Sniper — Web Demo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div>
+          <h1 data-i18n="title">OLX Deal Sniper — Web Demo</h1>
+          <p class="subtitle" data-i18n="subtitle"></p>
+        </div>
+        <div class="topbar-actions">
+          <div class="lang-switch">
+            <button type="button" class="lang-btn" data-lang="uk">UA</button>
+            <button type="button" class="lang-btn" data-lang="en">EN</button>
+          </div>
+          <button type="button" id="btn-price-drop" class="btn-accent" data-i18n="simPriceDrop">Simulate price drop</button>
+          <button type="button" id="btn-reset" class="btn-secondary" data-i18n="resetDemo">Reset</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel stats-row">
+          <div class="stat">
+            <span id="stat-passed" class="stat-num green">0</span>
+            <span class="stat-label" data-i18n="passed">Passed</span>
+          </div>
+          <div class="stat">
+            <span id="stat-skipped" class="stat-num muted">0</span>
+            <span class="stat-label" data-i18n="skipped">Skipped</span>
+          </div>
+          <div class="stat">
+            <span id="stat-favs" class="stat-num amber">0</span>
+            <span class="stat-label" data-i18n="favorites">Favorites</span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 data-i18n="filtersHeading">Filter Rules</h2>
+
+          <label class="field-label" data-i18n="priorityRegion">Priority region</label>
+          <select id="select-region">
+            <option value="Івано-Франківськ">Івано-Франківськ (ID 13)</option>
+            <option value="Львів">Львів (ID 14)</option>
+            <option value="Київ">Київ (ID 25)</option>
+          </select>
+
+          <div class="grid-2">
+            <div>
+              <label class="field-label" data-i18n="minPrice">Min UAH</label>
+              <input type="number" id="input-min-price" step="500" />
+            </div>
+            <div>
+              <label class="field-label" data-i18n="maxPrice">Max UAH</label>
+              <input type="number" id="input-max-price" step="500" />
+            </div>
+          </div>
+
+          <label class="check-row">
+            <input type="checkbox" id="toggle-skip-market" />
+            <span data-i18n="skipAboveMarket">Skip offers above market median</span>
+          </label>
+
+          <div class="range-row">
+            <span data-i18n="minDiscount">Min discount %</span>
+            <input type="number" id="input-min-discount" step="1" min="-50" max="80" />
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 data-i18n="stopWordsHeading">Stop-words</h2>
+          <form id="stop-form" class="add-row">
+            <input type="text" id="stop-input" data-i18n-placeholder="stopPlaceholder" />
+            <button type="submit" data-i18n="add">Add</button>
+          </form>
+          <div id="stop-tags" class="tags"></div>
+
+          <h2 class="mt" data-i18n="whitelistHeading">Whitelist (optional)</h2>
+          <form id="wl-form" class="add-row">
+            <input type="text" id="wl-input" data-i18n-placeholder="wlPlaceholder" />
+            <button type="submit" data-i18n="add">Add</button>
+          </form>
+          <div id="wl-tags" class="tags"></div>
+        </section>
+      </aside>
+
+      <section class="feed-col">
+        <div id="cat-tabs" class="tabs">
+          <button type="button" class="tab active" data-cat="all" data-i18n="catAll">All</button>
+          <button type="button" class="tab" data-cat="iphone">iPhone</button>
+          <button type="button" class="tab" data-cat="macbook">MacBook</button>
+          <button type="button" class="tab" data-cat="console">PS5 / Steam Deck</button>
+          <button type="button" class="tab" data-cat="ecoflow">EcoFlow</button>
+        </div>
+
+        <div id="offers-list" class="offers-list"></div>
+      </section>
+
+      <aside class="preview-col">
+        <div class="tabs">
+          <button type="button" class="tab active" data-side="telegram" data-i18n="tabTelegram">Telegram Card</button>
+          <button type="button" class="tab" data-side="favorites" data-i18n="tabFavorites">Favorites</button>
+          <button type="button" class="tab" data-side="stats" data-i18n="tabStats">/stats</button>
+        </div>
+
+        <div id="side-telegram" class="panel tg-panel"></div>
+        <div id="side-favorites" class="panel" hidden></div>
+        <div id="side-stats" class="panel" hidden>
+          <form id="stats-form" class="add-row">
+            <input type="text" id="stats-input" value="iphone 14" data-i18n-placeholder="statsPlaceholder" />
+            <button type="submit" data-i18n="runStats">Check</button>
+          </form>
+          <div id="stats-output" class="tg-card"></div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
